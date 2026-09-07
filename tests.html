@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Amazing Race — mechanics tests</title>
+<style>
+  body { background:#05070b; color:#dfe9f3; font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; margin:0; padding:28px; }
+  h1 { font-size:17px; letter-spacing:.1em; text-transform:uppercase; color:#2ee6f6; margin:0 0 4px; }
+  p.lead { color:#7d8b9c; margin:0 0 22px; font-size:12.5px; }
+  #summary { font-size:16px; font-weight:700; margin:0 0 16px; padding:10px 14px; border-radius:3px; display:inline-block; }
+  #summary.ok   { background:rgba(126,224,138,.12); color:#7ee08a; border:1px solid #2c5a38; }
+  #summary.bad  { background:rgba(255,77,94,.12);  color:#ff4d5e; border:1px solid #5a2c33; }
+  ol { padding-left:24px; margin:0; }
+  li { margin-bottom:3px; }
+  li.pass::marker { color:#7ee08a; }
+  li.fail { color:#ff4d5e; }
+  .tag { display:inline-block; width:52px; font-weight:700; }
+  .pass .tag { color:#7ee08a; }
+  .fail .tag { color:#ff4d5e; }
+  .note { color:#7d8b9c; }
+  /* the game builds itself against these; keep them present but out of the way */
+  #wrap { position:fixed; left:-9999px; top:0; width:900px; height:600px; }
+</style>
+</head>
+<body>
+<h1>Mechanics tests</h1>
+<p class="lead">Runs the real game module headlessly via <code>__GAME.step()</code> — no rendering loop, no timing flakiness.</p>
+<div id="summary">running…</div>
+<ol id="results"></ol>
+
+<!-- the game expects this DOM; it lives offscreen so the tests stay readable -->
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="hud" class="hidden">
+    <div class="hpwrap" id="hpwrap"><div id="hpfill"></div><div class="hplabel" id="hplabel"></div></div>
+    <div class="chip" id="chipOrbs"><span class="v" id="vOrbs"></span></div>
+    <div class="chip" id="chipKills"><span class="v" id="vKills"></span></div>
+    <div id="timer"></div><canvas id="minimap" width="121" height="138"></canvas>
+    <div id="toast"></div><button id="mute"></button>
+  </div>
+  <div id="touch"><div class="stick" id="stickL"><i></i></div><div class="stick" id="stickR"><i></i></div></div>
+  <div class="screen" id="scrTitle"><button id="btnStart"></button></div>
+  <div class="screen" id="scrEnd">
+    <p id="verdict"></p><p id="reason"></p><div id="tally"></div>
+    <button id="btnAgain"></button><button id="btnMenu"></button>
+  </div>
+</div>
+
+<script src="src/maze.js"></script>
+<script src="src/game.js"></script>
+<script>
+(function () {
+  const A = window.__GAME, { G, T, M, keys, step, hitsWall } = A;
+  const results = [];
+  const ok = (name, cond, detail) => results.push({ name, pass: !!cond, detail });
+
+  const clearKeys = () => { for (const k in keys) keys[k] = false; };
+  /** Fresh game; returns the NEW player object (reset() replaces it). */
+  const fresh = () => { A.startGame(); clearKeys(); return G.player; };
+  const noEnemies = () => G.enemies.forEach(e => { e.alive = false; });
+
+  /** A spot with clearance in every direction, so directional tests don't depend on
+   *  which way happens to be walled at some hand-picked coordinate. */
+  const openSpot = (function () {
+    const g = M.decodeGrid();
+    for (let j = 0; j < M.GH; j++) {
+      for (let i = 0; i < M.GW; i++) {
+        if (g[j * M.GW + i]) continue;
+        const x = M.ORIGIN_X + (i + 0.5) * M.CELL;
+        const y = M.TOP_Y - (j + 0.5) * M.CELL;
+        if (!hitsWall(x, y, 11)) return { x, y };
+      }
+    }
+    return { x: M.SPAWN.x, y: M.SPAWN.y };
+  })();
+
+  // ---- maze data -------------------------------------------------------
+  const grid = M.decodeGrid();
+  ok("maze decodes to the extracted grid size",
+     grid.length === M.GW * M.GH && M.GW === 242 && M.GH === 276,
+     M.GW + "x" + M.GH);
+
+  let openCells = 0;
+  for (let i = 0; i < grid.length; i++) if (!grid[i]) openCells++;
+  ok("maze has the expected walkable area", openCells === 8582, openCells + " open cells");
+
+  ok("all 13 enemies / 10 orbs / 5 donuts are defined",
+     M.ENEMIES.length === 13 && M.ORBS.length === 10 && M.DONUTS.length === 5);
+
+  const blocked = []
+    .concat([["spawn", M.SPAWN], ["portal", M.PORTAL]])
+    .concat(M.ENEMIES.map(e => ["enemy " + e.t, e]))
+    .concat(M.ORBS.map(o => ["orb", o]))
+    .concat(M.DONUTS.map(d => ["donut", d]))
+    .filter(([, p]) => hitsWall(p.x, p.y, T.playerR));
+  ok("every spawn point is reachable by the player", blocked.length === 0,
+     blocked.length ? blocked.map(b => b[0]).join(", ") : "30/30 clear");
+
+  // ---- movement & collision -------------------------------------------
+  let p = fresh();
+  const sx = p.x, sy = p.y;
+  keys.w = true; step(1 / 60, 60); keys.w = false;
+  ok("player moves under WASD", Math.hypot(p.x - sx, p.y - sy) > 5);
+  ok("player never ends up inside a wall", !hitsWall(p.x, p.y, T.playerR));
+
+  p = fresh();
+  keys.d = true; step(1 / 60, 600); keys.d = false;     // 10s of shoving east
+  ok("walls stop the player instead of leaking", !hitsWall(p.x, p.y, T.playerR));
+
+  // ---- aiming ----------------------------------------------------------
+  p = fresh(); p.aim = 0;
+  keys.ArrowLeft = true; step(1 / 60, 30); keys.ArrowLeft = false;
+  ok("Left arrow turns (the original's controls)", p.aim > 1.4 && p.aim < 1.8, "aim " + p.aim.toFixed(2) + " rad");
+
+  p = fresh(); p.aim = 0;
+  keys.ArrowRight = true; step(1 / 60, 30); keys.ArrowRight = false;
+  ok("Right arrow turns the other way", p.aim < -1.4 && p.aim > -1.8);
+
+  p = fresh(); p.x = -104; p.y = -4; p.aim = 0;
+  const ux = p.x;
+  keys.ArrowUp = true; step(1 / 60, 30); keys.ArrowUp = false;
+  ok("Up arrow drives along the current facing", p.x - ux > 4, "dx " + (p.x - ux).toFixed(1));
+
+  p = fresh(); p.x = -104; p.y = -4; p.aim = 0;
+  keys.w = true; step(1 / 60, 10); keys.w = false;
+  ok("WASD-only players aim where they walk", Math.abs(p.aim - Math.PI / 2) < 0.01);
+
+  p = fresh(); p.x = -104; p.y = -4;
+  document.getElementById("game").dispatchEvent(new MouseEvent("mousemove", { clientX: 10, clientY: 10, bubbles: true }));
+  step(1 / 60, 2);
+  const mouseAim = p.aim;
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" }));
+  step(1 / 60, 20);
+  window.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowLeft" }));
+  clearKeys();
+  ok("a resting mouse can't lock the aim", Math.abs(p.aim - mouseAim) > 0.5,
+     mouseAim.toFixed(2) + " -> " + p.aim.toFixed(2));
+
+  // ---- shooting --------------------------------------------------------
+  p = fresh(); noEnemies(); p.x = openSpot.x; p.y = openSpot.y; p.aim = 0; G.shots.length = 0;
+  keys[" "] = true; step(1 / 60, 3); keys[" "] = false;
+  const shot = G.shots[0];
+  ok("Space fires along the aim", shot && shot.vx > 100 && Math.abs(shot.vy) < 1,
+     shot ? "vx " + shot.vx.toFixed(0) + ", vy " + shot.vy.toFixed(0) : "no shot");
+
+  p = fresh(); noEnemies(); p.x = openSpot.x; p.y = openSpot.y; p.aim = 0;
+  keys.ArrowRight = true; step(1 / 60, 29); keys.ArrowRight = false;
+  const turnedTo = p.aim;
+  G.shots.length = 0; keys[" "] = true; step(1 / 60, 3); keys[" "] = false;
+  const shot2 = G.shots[0];
+  ok("turning changes where the next shot goes", shot2 && shot2.vy < -100,
+     "turned to " + turnedTo.toFixed(2) + " rad" + (shot2 ? ", vy " + shot2.vy.toFixed(0) : ", no shot"));
+
+  p = fresh(); noEnemies(); p.aim = Math.PI / 2;
+  G.shots.length = 0; keys[" "] = true; step(1 / 60, 4); keys[" "] = false;
+  ok("fire rate is limited by the cooldown", G.shots.length === 1, G.shots.length + " shot(s) in 4 frames");
+
+  // ---- combat ----------------------------------------------------------
+  p = fresh();
+  const target = G.enemies[0]; target.cd = 1e9;         // stop it shooting back
+  p.x = target.x; p.y = target.y - 14; p.aim = Math.PI / 2;
+  keys[" "] = true; step(1 / 60, 180); keys[" "] = false;
+  ok("an enemy dies after " + T.enemyHP + " hits and counts as a kill",
+     !target.alive && G.kills === 1);
+
+  p = fresh();
+  G.eshots.push({ x: p.x + 6, y: p.y, vx: -60, vy: 0, life: 4 });
+  step(1 / 60, 20);
+  ok("an enemy shot costs " + T.enemyDamage + " health", p.hp === T.startHP - T.enemyDamage, "hp " + p.hp);
+
+  p = fresh();
+  p.hp = 5; G.eshots.push({ x: p.x + 6, y: p.y, vx: -60, vy: 0, life: 4 });
+  step(1 / 60, 20);
+  ok("reaching zero health ends the run", G.state === "over" && p.hp === 0);
+
+  // ---- pickups ---------------------------------------------------------
+  p = fresh();
+  const orb = G.orbs[0]; p.x = orb.x; p.y = orb.y; step(1 / 60, 2);
+  ok("collecting an orb increments the counter", orb.got && G.orbsHeld === 1);
+
+  p = fresh(); p.hp = 40;
+  const donut = G.donuts[0]; p.x = donut.x; p.y = donut.y; step(1 / 60, 2);
+  ok("a donut restores +" + T.donutHeal + " health", p.hp === 55, "hp " + p.hp);
+
+  p = fresh(); p.hp = 95;
+  const donut2 = G.donuts[0]; p.x = donut2.x; p.y = donut2.y; step(1 / 60, 2);
+  ok("health never exceeds " + T.startHP, p.hp === T.startHP, "hp " + p.hp);
+
+  p = fresh();
+  const donut3 = G.donuts[0]; p.x = donut3.x; p.y = donut3.y; step(1 / 60, 2);
+  ok("a donut is not wasted at full health", !donut3.got);
+
+  // ---- the portal gate -------------------------------------------------
+  p = fresh(); p.x = M.PORTAL.x; p.y = M.PORTAL.y; step(1 / 60, 2);
+  ok("the portal refuses you without the quota", G.state === "play");
+
+  p = fresh(); G.orbsHeld = 3; G.kills = 3;
+  p.x = M.PORTAL.x; p.y = M.PORTAL.y; step(1 / 60, 2);
+  ok("orbs alone are not enough", G.state === "play");
+
+  p = fresh(); G.orbsHeld = 2; G.kills = 4;
+  p.x = M.PORTAL.x; p.y = M.PORTAL.y; step(1 / 60, 2);
+  ok("kills alone are not enough", G.state === "play");
+
+  p = fresh(); G.orbsHeld = 3; G.kills = 4;
+  p.x = M.PORTAL.x; p.y = M.PORTAL.y; step(1 / 60, 2);
+  ok("3 orbs + 4 kills opens the portal", G.state === "over");
+
+  p = fresh(); p.x = M.PORTAL.x; p.y = M.PORTAL.y; step(1 / 60, 2);
+  G.orbsHeld = 3; G.kills = 4; step(1 / 60, 2);
+  ok("finishing the quota while standing on the portal still wins", G.state === "over");
+
+  // ---- the clock -------------------------------------------------------
+  p = fresh();
+  ok("the run starts at 4:00", Math.round(G.timeLeft) === 240);
+  G.timeLeft = 0.5; step(1 / 60, 60);
+  ok("running out of time ends the run", G.state === "over");
+
+  // ---- report ----------------------------------------------------------
+  const failed = results.filter(r => !r.pass).length;
+  const list = document.getElementById("results");
+  list.innerHTML = results.map(r =>
+    '<li class="' + (r.pass ? "pass" : "fail") + '"><span class="tag">' +
+    (r.pass ? "PASS" : "FAIL") + "</span>" + r.name +
+    (r.detail ? ' <span class="note">— ' + r.detail + "</span>" : "") + "</li>"
+  ).join("");
+  const s = document.getElementById("summary");
+  s.textContent = failed === 0
+    ? "All " + results.length + " tests passed"
+    : failed + " of " + results.length + " tests FAILED";
+  s.className = failed === 0 ? "ok" : "bad";
+  window.__TEST_RESULTS = { total: results.length, failed, results };
+})();
+</script>
+</body>
+</html>

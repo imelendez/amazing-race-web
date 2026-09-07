@@ -1,6 +1,6 @@
 # The Amazing Race — browser port
 
-**[▶ Play it](https://claude.ai/code/artifact/6c30dc2d-4c6e-419d-87fe-32adcf744178)**
+**[▶ Play it](https://imelendez.github.io/amazing-race-web/)**
 
 A 2D browser port of a 3D game I built in college in 2016 on the
 [Panda3D](https://www.panda3d.org/) engine. Same maze, same objectives, same

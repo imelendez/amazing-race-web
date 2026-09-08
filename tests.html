@@ -188,7 +188,7 @@
 
   p = fresh();
   const donut3 = G.donuts[0]; p.x = donut3.x; p.y = donut3.y; step(1 / 60, 2);
-  ok("a donut is not wasted at full health", !donut3.got);
+  ok("a donut is always eaten, like the original", donut3.got && p.hp === T.startHP);
 
   // ---- the portal gate -------------------------------------------------
   p = fresh(); p.x = M.PORTAL.x; p.y = M.PORTAL.y; step(1 / 60, 2);

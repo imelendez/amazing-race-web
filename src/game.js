@@ -394,12 +394,15 @@
     for (const d of G.donuts) {
       if (d.got) continue;
       if (Math.hypot(p.x - d.x, p.y - d.y) < T.playerR + T.donutR) {
-        if (p.hp >= T.startHP) continue;         // don't waste it at full health
+        // The original always eats the donut and caps at 100. Skipping the pickup at
+        // full health to avoid "wasting" it is unfaithful, and it reads as a broken
+        // pickup: you walk over a donut and nothing happens at all.
+        const before = p.hp;
         d.got = true;
         p.hp = Math.min(T.startHP, p.hp + T.donutHeal);
         spawnParts(d.x, d.y, "#ffb35c", 14, 30);
         Sound.donut();
-        showToast("+" + T.donutHeal + " health", 1100);
+        showToast(p.hp > before ? "+" + (p.hp - before) + " health" : "Health already full", 1100);
       }
     }
 

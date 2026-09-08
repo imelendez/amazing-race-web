@@ -121,3 +121,10 @@ tools/              maze extraction + encoding pipeline
 The Panda3D version is in [TheAmazeingRace](https://github.com/imelendez/TheAmazeingRace),
 and it still runs — it needed a current Panda3D and a four-line Python 2 → 3 fix, and
 nothing else.
+
+## And a 3D one
+
+[amazing-race-3d](https://github.com/imelendez/amazing-race-3d) is a spike that takes
+the original's *actual art* — the maze, the models, and Ralph's rig with all 48 joints
+and both animation clips — into Three.js, with the bone rotations verified to match
+Panda3D numerically. It reuses this project's wall grid for collision.

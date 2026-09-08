@@ -124,7 +124,9 @@ nothing else.
 
 ## And a 3D one
 
-[amazing-race-3d](https://github.com/imelendez/amazing-race-3d) is a spike that takes
-the original's *actual art* — the maze, the models, and Ralph's rig with all 48 joints
-and both animation clips — into Three.js, with the bone rotations verified to match
-Panda3D numerically. It reuses this project's wall grid for collision.
+**[Play the 3D version](https://imelendez.github.io/amazing-race-3d/)** —
+[amazing-race-3d](https://github.com/imelendez/amazing-race-3d) takes the original's
+*actual art* into Three.js: the maze, the models, and Ralph's rig with all 48 joints
+and both animation clips, with the bone rotations verified to match Panda3D
+numerically. It reuses this project's wall grid for collision and the same game rules,
+so the 2D and 3D builds are two views of one game.
